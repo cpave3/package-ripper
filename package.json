@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "dependencies": {
+    "node-fetch": "^3.2.10"
+  },
+  "name": "package-ripper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Cameron Pavey <cpave3@gmail.com>",
+  "license": "MIT"
+}
