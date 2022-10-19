@@ -9,21 +9,28 @@ let rateLimiter = false;
 fs.readFile(fileName, "utf8", (err, rawData) => {
   // parse the data from csv
   const [headers, ...data] = rawData.split("\n").map((row) => {
-    const [packageName, version, repo, license] = row.split(",");
-    return { packageName, version, repo, license };
+    const [packageName, version, requiredBy, repo, license] = row.split(",");
+    return {
+      packageName,
+      version,
+      requiredBy,
+      repo: repo === "undefined" ? undefined : repo,
+      license: license === "undefined" ? undefined : license,
+    };
   });
 
   // iterate through each row and add repo data to the row if not present
   Promise.all(
     data.map(async (row) => {
       if (row.repo || rateLimiter) {
+        console.log({ row });
         console.log(
           "skipping row: ",
           rateLimiter ? "rate limited" : "has repo"
         );
         return row;
       }
-      const { packageName, version } = row;
+      const { packageName, version, requiredBy } = row;
       const packageData = await getRepo(packageName, version);
 
       // wait 100ms
@@ -31,6 +38,8 @@ fs.readFile(fileName, "utf8", (err, rawData) => {
 
       if (!packageData) {
         rateLimiter = true;
+        console.log("rate limited, stopping");
+        return row;
       }
 
       // add repo and license to row
@@ -40,12 +49,12 @@ fs.readFile(fileName, "utf8", (err, rawData) => {
   ).then((mapped) => {
     // write the csv back, with the new data, and new headers
     const csv = mapped
-      .map(({ packageName, version, repo, license }) => {
-        return `${packageName},${version},${repo},${license}`;
+      .map(({ packageName, version, requiredBy, repo, license }) => {
+        return `${packageName},${version},${requiredBy},${repo},${license}`;
       })
       .join("\n");
 
-    const csvWithHeader = `packageName,version,repo,license\n${csv}`;
+    const csvWithHeader = `packageName,version,requiredBy,repo,license\n${csv}`;
 
     // write the file
     fs.writeFile(`${fileName}`, csvWithHeader, (err) => {
@@ -63,7 +72,13 @@ async function getRepo(packageName, version) {
   // call npm API for this package
   const response = await fetch(
     `https://registry.npmjs.org/${packageName}/${version}`
-  );
+  ).catch((err) => {
+    console.error(err);
+  });
+
+  if (!response) {
+    return {};
+  }
 
   // if the response is a 429, stop for now
   if (response.status === 429) {
@@ -71,7 +86,13 @@ async function getRepo(packageName, version) {
     return null;
   }
 
-  console.log("got data for ", packageName, version);
+  console.log(
+    "got data for ",
+    packageName,
+    version,
+    "status: ",
+    response.status
+  );
   const data = await response.json();
   const repo = data.repository?.url ?? "";
   const license = data.license;
